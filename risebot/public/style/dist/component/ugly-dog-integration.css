@@ -1,0 +1,297 @@
+/* UglyDog Game Integration with Risebot Theme */
+
+.game-integration-wrapper {
+  margin: 30px 0;
+  position: relative;
+}
+
+/* Game Layout */
+.game-layout {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 30px;
+  max-width: 100%;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* Left Container - Game Area */
+.game-container-left {
+  background: rgba(8, 19, 34, 0.6);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: fadeInUp 0.6s ease-out;
+}
+
+/* Right Container - Leaderboard Area */
+.leaderboard-container-right {
+  background: rgba(8, 19, 34, 0.7);
+  border-radius: 16px;
+  border: 1px solid rgba(108, 99, 255, 0.3);
+  padding: 20px;
+  backdrop-filter: blur(10px);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: fadeInUp 0.8s ease-out;
+}
+
+/* Game Canvas */
+.game-canvas {
+  position: relative;
+  background: rgba(8, 19, 34, 0.5);
+  border-radius: 12px;
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  overflow: hidden;
+  cursor: crosshair;
+  animation: glowing 4s infinite ease-in-out;
+}
+
+/* UglyDog */
+.uglydog {
+  position: absolute;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+  z-index: 10;
+  animation: float 2s infinite ease-in-out;
+  filter: drop-shadow(0 0 8px rgba(108, 99, 255, 0.4));
+}
+
+.uglydog:hover {
+  transform: scale(1.2) rotate(5deg);
+  filter: brightness(1.3) drop-shadow(0 0 12px rgba(108, 99, 255, 0.8));
+}
+
+/* Game Controls */
+.game-controls-simple {
+  text-align: center;
+  margin: 20px 0;
+}
+
+.start-game-button, .stop-game-button {
+  padding: 12px 30px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.start-game-button {
+  background: linear-gradient(45deg, #6c63ff, #5046e5);
+  color: white;
+}
+
+.start-game-button:hover {
+  background: linear-gradient(45deg, #5046e5, #3b32cc);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(108, 99, 255, 0.4);
+}
+
+.stop-game-button {
+  background: linear-gradient(45deg, #f44336, #d32f2f);
+  color: white;
+}
+
+.stop-game-button:hover {
+  background: linear-gradient(45deg, #d32f2f, #b71c1c);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(211, 47, 47, 0.4);
+}
+
+/* Stats Cards */
+.stats-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.stat-card {
+  background: rgba(8, 19, 34, 0.7);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  border: 1px solid rgba(108, 99, 255, 0.15);
+  animation: popIn 0.5s ease-out;
+}
+
+.stat-card h3 {
+  margin: 0 0 8px 0;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #e0e0e0;
+}
+
+.stat-card .value {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #6c63ff;
+}
+
+/* Miss Indicators */
+.miss-indicators {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.miss-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.miss-indicator.active {
+  background: #f44336;
+  box-shadow: 0 0 10px #f44336;
+}
+
+/* Game Message */
+.game-message {
+  text-align: center;
+  padding: 12px;
+  background: rgba(8, 19, 34, 0.8);
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  font-weight: 500;
+  font-size: 0.95rem;
+  animation: popIn 0.5s ease-in-out;
+  color: #e0e0e0;
+}
+
+/* Evolution Notification */
+.evolution-notification {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(8, 19, 34, 0.95);
+  border: 2px solid #6c63ff;
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  z-index: 1000;
+  animation: fadeInScale 0.5s ease-out;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
+}
+
+.evolution-notification .emoji {
+  font-size: 3.5rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.evolution-notification .title {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: #6c63ff;
+  margin-bottom: 5px;
+}
+
+.evolution-notification .name {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  color: #e0e0e0;
+}
+
+.evolution-notification .dismiss-hint {
+  font-size: 0.8rem;
+  color: #bdbdbd;
+  opacity: 0.7;
+  margin-top: 15px;
+}
+
+/* Leaderboard */
+.leaderboard-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 8px;
+  background: rgba(8, 19, 34, 0.5);
+  transition: all 0.2s ease;
+  animation: stackUp 0.5s ease-out forwards;
+}
+
+.leaderboard-entry:hover {
+  transform: translateY(-2px);
+  background: rgba(8, 19, 34, 0.7);
+  border-color: rgba(108, 99, 255, 0.3);
+}
+
+.leaderboard-entry-gold {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.leaderboard-entry-silver {
+  background: rgba(158, 158, 158, 0.15);
+  border-color: rgba(158, 158, 158, 0.3);
+}
+
+.leaderboard-entry-bronze {
+  background: rgba(255, 152, 0, 0.15);
+  border-color: rgba(255, 152, 0, 0.3);
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes stackUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-7px); }
+  100% { transform: translateY(0px); }
+}
+
+@keyframes glowing {
+  0% { box-shadow: 0 0 5px rgba(108, 99, 255, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(108, 99, 255, 0.6); }
+  100% { box-shadow: 0 0 5px rgba(108, 99, 255, 0.3); }
+}
+
+@keyframes fadeInScale {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .game-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .leaderboard-container-right {
+    max-height: 500px;
+  }
+}

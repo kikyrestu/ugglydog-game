@@ -1,0 +1,64 @@
+/* UglyDog Game Wrapper Styles */
+.ugly-dog-wrapper {
+  margin-top: 30px;
+  margin-bottom: 30px;
+}
+
+.ugly-dog-game-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 992px) {
+  .ugly-dog-game-grid {
+    grid-template-columns: minmax(0, 2fr) 350px;
+    gap: 30px;
+  }
+}
+
+.ugly-dog-game-container {
+  background: rgba(8, 19, 34, 0.6);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  min-height: 500px;
+}
+
+.ugly-dog-leaderboard-container {
+  background: rgba(8, 19, 34, 0.7);
+  border-radius: 16px;
+  border: 1px solid rgba(108, 99, 255, 0.3);
+  padding: 20px;
+  backdrop-filter: blur(10px);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.ugly-dog-leaderboard-title {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* Game container heights */
+#ugly-dog-game-container, 
+#ugly-dog-leaderboard {
+  height: 100%;
+  min-height: 450px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive styles */
+@media (max-width: 991px) {
+  .ugly-dog-game-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .ugly-dog-leaderboard-container {
+    max-height: 500px;
+  }
+}

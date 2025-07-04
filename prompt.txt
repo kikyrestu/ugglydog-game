@@ -1,0 +1,6 @@
+di setiap satu level, uglydognya akan tambah cepet beberapa kali sesuai levelnya, tapi tetap harus masuk ke logic dan UX
+ketika uglydog di abaikan tidak ada reaksi mengkliknya, jadi tidak bisa diabaikan, dan akan dianggap missed
+trap akan muncul saat level 3 dan level seterusnya, lalu buat posible chance di level 8 sampai 10
+perbaiki pop up missednya karna terlalu lama muncul di layar, terus ketentuan naik level adalah setiap kelipatan 50 point
+ketika naik ke level 3 kelipatan untuk naik level adalah 100 saat level 4 kelipatan 150, level 5 200, level 6 250, level 7 300, level 8 350, level 9 400, level 10 450
+trap di level 3 akan muncul bersamaan dengan uglydog tetapi hanya 1 trap saja yang muncul, ketika sudah ke level 4 akan menjadi 2 trap muncul bersamaan dengan uglydog, level 5 3 trap max trap yang muncul di level selanjutnya hanyalah 3 trap saja
