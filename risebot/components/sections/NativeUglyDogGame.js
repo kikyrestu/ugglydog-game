@@ -1,18 +1,20 @@
 'use client'
 import React, { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 
-// Level system based on score - Simple and clean
+// Level system based on score - SIMPLE & COMPETITIVE! 
+// Progression: +50 (level 1-4), +100 (level 5-7), +200 (level 8-9), unlimited (level 10+)
 const GAME_LEVELS = [
-  { level: 1, name: 'Easy', minScore: 0, maxScore: 29, color: '#86FF00', difficulty: 'Beginner' },
-  { level: 2, name: 'Easy', minScore: 30, maxScore: 59, color: '#86FF00', difficulty: 'Easy' },
-  { level: 3, name: 'Easy+', minScore: 60, maxScore: 99, color: '#86FF00', difficulty: 'Easy Plus' },
-  { level: 4, name: 'Medium', minScore: 100, maxScore: 149, color: '#fbbf24', difficulty: 'Medium' },
-  { level: 5, name: 'Medium', minScore: 150, maxScore: 199, color: '#fbbf24', difficulty: 'Medium+' },
-  { level: 6, name: 'Medium+', minScore: 200, maxScore: 299, color: '#fbbf24', difficulty: 'Challenging' },
-  { level: 7, name: 'Hard', minScore: 300, maxScore: 399, color: '#ef4444', difficulty: 'Hard' },
-  { level: 8, name: 'Hard', minScore: 400, maxScore: 549, color: '#ef4444', difficulty: 'Very Hard' },
-  { level: 9, name: 'Expert', minScore: 550, maxScore: 749, color: '#ef4444', difficulty: 'Expert' },
-  { level: 10, name: 'Ultimate', minScore: 750, maxScore: 9999, color: '#8b5cf6', difficulty: 'Ultimate' }
+  { level: 1, name: 'Easy', minScore: 0, maxScore: 49, color: '#86FF00', difficulty: 'Beginner' },
+  { level: 2, name: 'Easy', minScore: 50, maxScore: 99, color: '#86FF00', difficulty: 'Easy' },
+  { level: 3, name: 'Easy+', minScore: 100, maxScore: 149, color: '#86FF00', difficulty: 'Easy Plus' },
+  { level: 4, name: 'Medium', minScore: 150, maxScore: 199, color: '#fbbf24', difficulty: 'Medium' },
+  { level: 5, name: 'Medium', minScore: 200, maxScore: 299, color: '#fbbf24', difficulty: 'Medium+' },
+  { level: 6, name: 'Medium+', minScore: 300, maxScore: 399, color: '#fbbf24', difficulty: 'Challenging' },
+  { level: 7, name: 'Hard', minScore: 400, maxScore: 599, color: '#ef4444', difficulty: 'Hard' },
+  { level: 8, name: 'Hard+', minScore: 600, maxScore: 799, color: '#ef4444', difficulty: 'Very Hard' },
+  { level: 9, name: 'Expert', minScore: 800, maxScore: 999, color: '#ef4444', difficulty: 'Expert' },
+  { level: 10, name: 'Ultimate', minScore: 1000, maxScore: Infinity, color: '#8b5cf6', difficulty: 'Ultimate' }
 ]
 
 // SIMPLIFIED: No more trap system - pure UglyDog clicking game!
@@ -38,12 +40,24 @@ export default function NativeUglyDogGame() {
     gameTime: 0
   })
   const [currentDogId, setCurrentDogId] = useState(0)
-  const [autoMissTimer, setAutoMissTimer] = useState(null)
-  const [countdownInterval, setCountdownInterval] = useState(null)
   const [previousLevel, setPreviousLevel] = useState(1)
   const [dogClickable, setDogClickable] = useState(true)
   const [countdown, setCountdown] = useState(0)
   const [dogTimeoutState, setDogTimeoutState] = useState(false)
+  const [levelUpBreak, setLevelUpBreak] = useState(false)
+  const [breakCountdown, setBreakCountdown] = useState(0)
+
+  // --- Timer/interval refs for bulletproof cleanup ---
+  const autoMissTimerRef = React.useRef(null)
+  const countdownIntervalRef = React.useRef(null)
+  const levelUpBreakTimerRef = React.useRef(null)
+  const gameTimerRef = React.useRef(null)
+  const currentDogIdRef = React.useRef(0)
+
+  // Keep currentDogIdRef in sync with state
+  useEffect(() => {
+    currentDogIdRef.current = currentDogId
+  }, [currentDogId])
 
   // Get current level based on score
   const getCurrentLevel = useCallback(() => {
@@ -57,23 +71,245 @@ export default function NativeUglyDogGame() {
 
   const currentLevel = getCurrentLevel()
 
+  // 🚨 ULTRA-ISOLATED Break Popup Manager - IMMUNE FROM REACT LIFECYCLE!
+  const showBreakPopup = useCallback((level, countdown) => {
+    const timestamp = new Date().toISOString()
+    const timeStart = Date.now()
+    
+    // 🖥️ TERMINAL DEBUG: Log popup creation to Next.js terminal
+    console.log(`\n🖥️ [TERMINAL DEBUG] ${timestamp}`)
+    console.log(`🖥️ [TERMINAL DEBUG] ========== BREAK POPUP SHOW ==========`)
+    console.log(`🖥️ [TERMINAL DEBUG] Level: ${level}`)
+    console.log(`🖥️ [TERMINAL DEBUG] Countdown: ${countdown} seconds`)
+    console.log(`🖥️ [TERMINAL DEBUG] Time Started: ${timeStart}`)
+    console.log(`🖥️ [TERMINAL DEBUG] =====================================\n`)
+    
+    // 🔒 GLOBAL FLAG: Mark popup as protected from React cleanup
+    window.UGLYDOG_BREAK_ACTIVE = true
+    window.UGLYDOG_BREAK_START_TIME = timeStart
+    
+    // Remove any existing popup first - check both canvas and body
+    const existingPopup = document.getElementById('level-up-break-portal')
+    if (existingPopup) {
+      if (existingPopup.parentNode) {
+        existingPopup.parentNode.removeChild(existingPopup)
+      }
+      console.log(`🖥️ [TERMINAL DEBUG] Removed existing popup before creating new one`)
+    }
+
+    // Create popup element directly in DOM - SECTION OVERLAY MODE!
+    const popupContainer = document.createElement('div')
+    popupContainer.id = 'level-up-break-portal'
+    popupContainer.setAttribute('data-start-time', timeStart.toString())
+    popupContainer.setAttribute('data-protected', 'true') // Mark as protected
+    
+    // Find the game canvas to position popup relative to it
+    const gameCanvas = document.querySelector('.game-canvas')
+    const gameContainer = document.querySelector('.native-uglydog-game')
+    
+    if (gameCanvas && gameContainer) {
+      // Position popup INSIDE the game canvas section only
+      const canvasRect = gameCanvas.getBoundingClientRect()
+      const containerRect = gameContainer.getBoundingClientRect()
+      
+      popupContainer.style.cssText = `
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        animation: section-popup-in 0.3s ease-out;
+        min-width: 200px;
+        max-width: 220px;
+        padding: 0;
+      `
+      
+      // Insert popup directly into game canvas (not body!)
+      gameCanvas.style.position = 'relative' // Ensure relative positioning
+      gameCanvas.appendChild(popupContainer)
+      
+      console.log(`🖥️ [TERMINAL DEBUG] 📱 Popup positioned as SECTION OVERLAY in game canvas`)
+    } else {
+      // Fallback to body if canvas not found - CLEAN BLUR VERSION
+      popupContainer.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        animation: section-popup-in 0.3s ease-out;
+        min-width: 200px;
+        max-width: 220px;
+        padding: 0;
+      `
+      document.body.appendChild(popupContainer)
+      console.log(`🖥️ [TERMINAL DEBUG] 📱 Popup fallback to centered position`)
+    }
+
+    const popupContent = document.createElement('div')
+    popupContent.style.cssText = `
+      text-align: center;
+      color: #ffffff;
+      padding: 18px 16px;
+      width: 100%;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 12px;
+    `
+
+    popupContent.innerHTML = `
+      <div style="font-size: 1.8rem; margin-bottom: 8px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));">🎉</div>
+      <div style="font-size: 1rem; font-weight: bold; margin-bottom: 6px; color: #86FF00; text-shadow: 0 0 16px rgba(134, 255, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.7);">LEVEL UP!</div>
+      <div style="font-size: 0.8rem; margin-bottom: 10px; opacity: 0.95; color: #ffffff; font-weight: 500;">Level ${level}</div>
+      <div style="font-size: 0.7rem; margin-bottom: 8px; color: #fbbf24; opacity: 0.9; font-weight: 500;">Break time:</div>
+      <div id="countdown-display" style="font-size: 1.8rem; font-weight: bold; color: #ef4444; text-shadow: 0 0 20px rgba(239, 68, 68, 0.9), 0 2px 8px rgba(0, 0, 0, 0.7);">${countdown}</div>
+    `
+
+    popupContainer.appendChild(popupContent)
+    
+    // Insert into canvas or body based on earlier logic
+    if (gameCanvas) {
+      // Already handled above
+    } else {
+      document.body.appendChild(popupContainer)
+    }
+    
+    console.log(`�️ [TERMINAL DEBUG] 🔒 Popup PROTECTED by global flag window.UGLYDOG_BREAK_ACTIVE = true`)
+    console.log(`🖥️ [TERMINAL DEBUG] Popup DOM element created and added to body at ${Date.now()}`)
+    
+    return popupContainer
+  }, [])
+
+  // STANDALONE Break Popup Updater
+  const updateBreakCountdown = useCallback((countdown) => {
+    const countdownElement = document.getElementById('countdown-display')
+    const popupElement = document.getElementById('level-up-break-portal')
+    
+    if (countdownElement && popupElement) {
+      countdownElement.textContent = countdown
+      
+      // Get start time and calculate how long popup has been visible
+      const startTime = parseInt(popupElement.getAttribute('data-start-time') || '0')
+      const currentTime = Date.now()
+      const elapsedMs = currentTime - startTime
+      const elapsedSeconds = (elapsedMs / 1000).toFixed(1)
+      
+      console.log(`�️ [TERMINAL DEBUG] ⏱️ Countdown Update: ${countdown}s remaining | Popup visible for ${elapsedSeconds}s`)
+    } else {
+      console.log(`🖥️ [TERMINAL DEBUG] ⚠️ PROBLEM: updateBreakCountdown called but popup elements not found!`)
+      console.log(`🖥️ [TERMINAL DEBUG] - countdownElement exists: ${!!countdownElement}`)
+      console.log(`🖥️ [TERMINAL DEBUG] - popupElement exists: ${!!popupElement}`)
+    }
+  }, [])
+
+  // 🚨 ULTRA-ISOLATED Break Popup Remover - PROTECTED FROM REACT
+  const hideBreakPopup = useCallback(() => {
+    // 🔒 CHECK GLOBAL PROTECTION FLAG
+    if (!window.UGLYDOG_BREAK_ACTIVE) {
+      console.log(`🖥️ [TERMINAL DEBUG] ⚠️ hideBreakPopup called but break not active (protected)`)
+      return
+    }
+    
+    const popupElement = document.getElementById('level-up-break-portal')
+    if (popupElement) {
+      // Calculate how long the popup was visible
+      const startTime = window.UGLYDOG_BREAK_START_TIME || parseInt(popupElement.getAttribute('data-start-time') || '0')
+      const endTime = Date.now()
+      const totalVisibleMs = endTime - startTime
+      const totalVisibleSeconds = (totalVisibleMs / 1000).toFixed(1)
+      
+      console.log(`\n🖥️ [TERMINAL DEBUG] ${new Date().toISOString()}`)
+      console.log(`🖥️ [TERMINAL DEBUG] ========== BREAK POPUP HIDE ==========`)
+      console.log(`🖥️ [TERMINAL DEBUG] Popup was visible for: ${totalVisibleSeconds} seconds`)
+      console.log(`🖥️ [TERMINAL DEBUG] Expected: 5.0 seconds`)
+      console.log(`🖥️ [TERMINAL DEBUG] Status: ${totalVisibleSeconds >= '4.8' ? '✅ GOOD' : '❌ TOO SHORT!'}`)
+      console.log(`🖥️ [TERMINAL DEBUG] Mode: Section Overlay`)
+      console.log(`🖥️ [TERMINAL DEBUG] Time Ended: ${endTime}`)
+      console.log(`🖥️ [TERMINAL DEBUG] =====================================\n`)
+      
+      // Smooth fade out animation before removal - QUICK AND CLEAN
+      popupElement.style.animation = 'section-popup-out 0.2s ease-in forwards'
+      setTimeout(() => {
+        if (popupElement.parentNode) {
+          popupElement.parentNode.removeChild(popupElement)
+        }
+      }, 200)
+      
+      // 🔒 CLEAR GLOBAL PROTECTION FLAG
+      window.UGLYDOG_BREAK_ACTIVE = false
+      window.UGLYDOG_BREAK_START_TIME = null
+      
+      console.log(`🖥️ [TERMINAL DEBUG] 🔒 Global protection flag cleared`)
+      console.log('🚀 STANDALONE: Break popup removed from section overlay')
+    } else {
+      console.log(`🖥️ [TERMINAL DEBUG] ⚠️ hideBreakPopup called but popup not found in DOM!`)
+    }
+  }, [])
+
   // Clear all timers - ENHANCED UTILITY FUNCTION (MOVED UP TO FIX INITIALIZATION ERROR)
   const clearAllTimers = useCallback(() => {
+    console.log('🧹 Clearing all timers...')
     // Clear auto-miss timer
-    if (autoMissTimer) {
-      clearTimeout(autoMissTimer)
-      setAutoMissTimer(null)
+    if (autoMissTimerRef.current) {
+      clearTimeout(autoMissTimerRef.current)
+      autoMissTimerRef.current = null
+      console.log('🧹 Cleared autoMissTimerRef')
     }
-    
     // Clear countdown interval
-    if (countdownInterval) {
-      clearInterval(countdownInterval)
-      setCountdownInterval(null)
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+      console.log('🧹 Cleared countdownIntervalRef')
     }
-    
-    // Reset countdown display
     setCountdown(0)
-  }, [autoMissTimer, countdownInterval])
+    setTimeout(() => {
+      console.log('✅ Timer cleanup completed')
+    }, 10)
+  }, [])
+
+  // Separate function to clear ONLY break timer without affecting break state - STANDALONE VERSION
+  const clearBreakTimer = useCallback(() => {
+    console.log(`🧹 clearBreakTimer called`)
+    if (levelUpBreakTimerRef.current) {
+      clearInterval(levelUpBreakTimerRef.current)
+      levelUpBreakTimerRef.current = null
+      console.log('🧹 Cleared levelUpBreakTimerRef')
+    }
+  }, [])
+
+  // Full cleanup function for game stop/restart only - ENHANCED CLEANUP
+  const clearAllTimersAndStates = useCallback(() => {
+    console.log('🧹 FULL CLEANUP: Clearing all timers and states...')
+    clearAllTimers()
+    clearBreakTimer()
+    setBreakCountdown(0)
+    setLevelUpBreak(false)
+    setDogClickable(false)
+    setDogTimeoutState(false)
+    setCountdown(0)
+    hideBreakPopup()
+    console.log('✅ Full cleanup completed')
+  }, [clearAllTimers, clearBreakTimer, hideBreakPopup])
 
   // Get game difficulty settings for SPAWN-DISAPPEAR MODE - SIMPLIFIED (No traps!)
   const getDifficultySettings = useCallback(() => {
@@ -91,101 +327,69 @@ export default function NativeUglyDogGame() {
         autoMissTimer: 4000,   // 4 seconds before disappear
         showCountdown: true
       }
-    } else if (level <= 6) {
+    } else if (level === 5) {
       return {
         spawnDelay: 1500,      // 1.5 seconds between spawns
-        autoMissTimer: 3500,   // 3.5 seconds before disappear
+        autoMissTimer: 2500,   // 2.5 seconds before disappear (getting challenging!)
         showCountdown: true
       }
-    } else if (level <= 8) {
+    } else if (level >= 6) {
       return {
-        spawnDelay: 1200,      // 1.2 seconds between spawns (getting intense!)
-        autoMissTimer: 3000,   // 3 seconds before disappear
+        spawnDelay: 800,       // 0.8 second between spawns (LIGHTNING FAST!)
+        autoMissTimer: 700,    // 0.7 SECOND before disappear (INSANE REFLEXES REQUIRED!) 🔥💀
         showCountdown: true
       }
     } else {
       return {
-        spawnDelay: 1000,      // 1 second between spawns (ultimate challenge!)
-        autoMissTimer: 2500,   // 2.5 seconds before disappear (very challenging!)
+        spawnDelay: 800,       // 0.8 second between spawns (ultimate challenge!)
+        autoMissTimer: 700,    // 0.7 second before disappear (ULTIMATE SPEED!) ⚡⚡⚡
         showCountdown: true
       }
     }
   }, [currentLevel.level])
 
-  // SIMPLIFIED: No more trap system - pure UglyDog clicking!
-
-  // SPAWN-DISAPPEAR SYSTEM - UglyDog appears and disappears randomly!
-  const spawnUglyDog = useCallback(() => {
-    if (!gameState.gameActive) return
-    
-    console.log('🎯 SPAWN-DISAPPEAR MODE: New UglyDog appearing!')
-    
-    // Generate random position for new spawn
-    const newDogPosition = {
-      x: Math.random() * 10 + 45, // ULTRA SAFE: 45-55% range (absolute center only!)
-      y: Math.random() * 10 + 45  // ULTRA SAFE: 45-55% range (absolute center only!)
-    }
-    
-    // SIMPLIFIED: No more traps! Pure UglyDog spawning
-    
-    // Spawn UglyDog at new position
-    setDogPosition(newDogPosition)
-    // REMOVED: setTraps - no more trap system!
-    setDogClickable(true)
-    setCurrentDogId(prev => prev + 1)
-    setDogTimeoutState(false)
-    setCountdown(0)
-    
-    // Auto-disappear after some time if not clicked (adds pressure!)
-    const difficulty_settings = getDifficultySettings()
-    const disappearTime = difficulty_settings.autoMissTimer || 4000 // 4 seconds default
-    
-    // Store timer reference for proper cleanup
-    const autoMissTimeoutId = setTimeout(() => {
-      if (gameState.gameActive && dogClickable) {
-        console.log('⏰ UglyDog disappeared! Player missed it!')
-        handleAutoMiss()
-      }
-    }, disappearTime)
-    
-    // Store the timer ID for cleanup
-    setAutoMissTimer(autoMissTimeoutId)
-    
-  }, [gameState.gameActive, dogClickable, getDifficultySettings, currentLevel.level])
-
-  // Handle auto-miss when UglyDog disappears
+  // Handle auto-miss when UglyDog disappears - RACE CONDITION PROTECTED (MOVED UP TO FIX DEPENDENCY)
   const handleAutoMiss = useCallback(() => {
-    if (!gameState.gameActive || !dogClickable) return
-    
+    // 🔒 ULTRA-STRICT GUARDS: Prevent race condition execution
+    if (!gameState.gameActive || !dogClickable || levelUpBreak) {
+      console.log('🚫 handleAutoMiss blocked - game state check failed:', {
+        gameActive: gameState.gameActive,
+        dogClickable,
+        levelUpBreak
+      })
+      return
+    }
+    // 🛡️ ADDITIONAL PROTECTION: Check if timer was already cleared
+    if (!autoMissTimerRef.current) {
+      console.log('🚫 handleAutoMiss blocked - timer was already cleared')
+      return
+    }
     console.log('💨 UglyDog disappeared - counting as miss!')
-    
-    // Clear the auto-miss timer first to prevent duplicate calls
+    // ⚡ IMMEDIATE PROTECTION: Clear timers FIRST to prevent double execution
     clearAllTimers()
     setDogClickable(false)
     setDogTimeoutState(true)
-    
     // Create disappear effect
     createTimeoutEffect(dogPosition.x, dogPosition.y)
-    
     // Count miss directly here (avoid circular dependency)
     const newMisses = gameState.misses + 1
     let newHealth = gameState.health
     let newScore = gameState.score
-
     if (newMisses >= 3) {
       console.log('3 misses reached, reducing health')
       newHealth = gameState.health - 1
       newScore = Math.max(0, gameState.score - 10)
-      
+      // 🔧 FIXED: Only game over when health becomes 0 or less
       if (newHealth <= 0) {
-        console.log('Health depleted, stopping game')
+        console.log('💀 GAME OVER! All health depleted!')
         stopGame()
         return
+      } else {
+        console.log(`❤️ Health reduced to ${newHealth}. Player gets fresh 3 misses!`)
       }
-      
       setGameState(prev => ({
         ...prev,
-        misses: 0,
+        misses: 0,        // Reset misses back to 0 for next round
         health: newHealth,
         score: newScore
       }))
@@ -196,64 +400,183 @@ export default function NativeUglyDogGame() {
         misses: newMisses
       }))
     }
-    
     setGameStats(prev => ({
       ...prev,
       accuracy: Math.round((prev.totalClicks / (prev.totalClicks + newMisses)) * 100)
     }))
-    
     // Schedule next spawn after difficulty-based delay
     const difficulty = getDifficultySettings()
     setTimeout(() => {
-      if (gameState.gameActive) {
-        // Call spawnUglyDog directly to avoid circular dependency
-        console.log('🎯 SPAWN-DISAPPEAR MODE: New UglyDog appearing!')
-        
-        // Generate random position for new spawn
-        const newDogPosition = {
-          x: Math.random() * 10 + 45, // ULTRA SAFE: 45-55% range (absolute center only!)
-          y: Math.random() * 10 + 45  // ULTRA SAFE: 45-55% range (absolute center only!)
+      if (gameState.gameActive && !levelUpBreak) {
+        if (typeof spawnUglyDog === 'function') {
+          spawnUglyDog()
         }
-        
-        // SIMPLIFIED: No more trap spawning! Pure UglyDog game
-        
-        // Spawn UglyDog at new position
-        setDogPosition(newDogPosition)
-        // REMOVED: No more trap system!
-        setDogClickable(true)
-        setCurrentDogId(prev => prev + 1)
-        setDogTimeoutState(false)
-        setCountdown(0)
-        
-        // Auto-disappear after some time if not clicked (adds pressure!)
-        const disappearTime = difficulty_settings.autoMissTimer || 4000 // 4 seconds default
-        
-        // Store timer reference for proper cleanup
-        const autoMissTimeoutId = setTimeout(() => {
-          if (gameState.gameActive && dogClickable) {
-            console.log('⏰ UglyDog disappeared! Player missed it!')
-            handleAutoMiss()
-          }
-        }, disappearTime)
-        
-        // Store the timer ID for cleanup
-        setAutoMissTimer(autoMissTimeoutId)
       }
-    }, difficulty.spawnDelay) // Dynamic spawn delay based on level
-  }, [gameState.gameActive, gameState.misses, gameState.health, gameState.score, dogClickable, dogPosition, clearAllTimers, getDifficultySettings, currentLevel.level])
+    }, difficulty.spawnDelay)
+  }, [gameState.gameActive, gameState.misses, gameState.health, gameState.score, dogClickable, dogPosition, clearAllTimers, getDifficultySettings, currentLevel.level, levelUpBreak])
 
-  // Check for level up - SIMPLIFIED (removed evolution complexity)
-  useEffect(() => {
-    if (currentLevel.level > previousLevel && gameState.gameActive) {
-      console.log(`Level up detected: ${previousLevel} → ${currentLevel.level}`)
-      
-      // Clear all timers first to prevent conflicts during transition
-      clearAllTimers()
-      
-      // Just update the previous level, no popup needed
-      setPreviousLevel(currentLevel.level)
+  // SIMPLIFIED: No more trap system - pure UglyDog clicking!
+
+  // SPAWN-DISAPPEAR SYSTEM - UglyDog appears and disappears randomly!
+  const spawnUglyDog = useCallback(() => {
+    if (!gameState.gameActive || levelUpBreak) return
+    
+    console.log('🎯 SPAWN-DISAPPEAR MODE: New UglyDog appearing!')
+    
+    // Generate DYNAMIC random position based on level for better UX!
+    const level = currentLevel.level
+    let xRange, yRange, xOffset, yOffset
+    
+    if (level <= 2) {
+      // Early levels: Easier positioning (center-ish)
+      xRange = 30; yRange = 30; xOffset = 35; yOffset = 35 // 35-65% range
+    } else if (level <= 4) {
+      // Mid levels: Wider positioning
+      xRange = 50; yRange = 40; xOffset = 25; yOffset = 30 // 25-75% x, 30-70% y
+    } else if (level <= 6) {
+      // Advanced: Full screen positioning
+      xRange = 70; yRange = 60; xOffset = 15; yOffset = 20 // 15-85% x, 20-80% y
+    } else {
+      // Expert: Edge-to-edge challenge! 
+      xRange = 80; yRange = 70; xOffset = 10; yOffset = 15 // 10-90% x, 15-85% y
     }
-  }, [currentLevel.level, previousLevel, gameState.gameActive, clearAllTimers])
+    
+    const newDogPosition = {
+      x: Math.random() * xRange + xOffset,
+      y: Math.random() * yRange + yOffset
+    }
+    
+    // SIMPLIFIED: No more traps! Pure UglyDog spawning
+    
+    // --- DEBUG LOG: SPAWN UGLYDOG ---
+    console.log('[SPAWN] Spawning UglyDog! Clear autoMissTimer if exists:', autoMissTimerRef.current)
+    // Always clear autoMissTimerRef before enabling click
+    if (autoMissTimerRef.current) {
+      clearTimeout(autoMissTimerRef.current)
+      autoMissTimerRef.current = null
+      console.log('[SPAWN] Cleared old autoMissTimerRef!')
+    }
+    setDogTimeoutState(false) // 🟢 Reset anim state DULUAN, biar ga nyangkut
+    setDogPosition(newDogPosition)
+    setDogClickable(true)
+    // Snapshot dogId buat anti-race condition (fix closure bug)
+    setCountdown(0)
+    const nextDogId = currentDogId + 1
+    setCurrentDogId(nextDogId)
+    // Auto-disappear after some time if not clicked (adds pressure!) - RACE CONDITION PROTECTED
+    const difficulty_settings = getDifficultySettings()
+    const disappearTime = difficulty_settings.autoMissTimer || 4000 // 4 seconds default
+    console.log(`⏰ Setting auto-miss timer for ${disappearTime}ms [dogId=${nextDogId}]`)
+    const autoMissTimeoutId = setTimeout(() => {
+      // 🛡️ DOUBLE-CHECK: Verify game state before executing auto-miss
+      // Cek dogId snapshot
+      if (nextDogId !== currentDogId) {
+        console.log('🚫 Auto-miss timer fired for old dogId, ignoring!')
+        return
+      }
+      if (!gameState.gameActive) {
+        console.log('🚫 Auto-miss timer fired but game is inactive - ignoring')
+        return
+      }
+      if (!dogClickable) {
+        console.log('🚫 Auto-miss timer fired but dog not clickable - ignoring')
+        return
+      }
+      if (levelUpBreak) {
+        console.log('🚫 Auto-miss timer fired but level break active - ignoring')
+        return
+      }
+      console.log('⏰ Auto-miss timer fired - executing handleAutoMiss')
+      handleAutoMiss()
+    }, disappearTime)
+    autoMissTimerRef.current = autoMissTimeoutId
+    
+    // ⚡ CLEANUP PROTECTION: Ensure timer cleanup on unmount
+    return () => {
+      if (autoMissTimeoutId) {
+        clearTimeout(autoMissTimeoutId)
+        console.log(`🧹 Cleanup: Cleared autoMissTimer on unmount: ${autoMissTimeoutId}`)
+      }
+    }
+
+  }, [gameState.gameActive, dogClickable, getDifficultySettings, currentLevel.level, levelUpBreak, handleAutoMiss])
+
+  // Start level-up break sequence - STANDALONE POPUP VERSION
+  const startLevelUpBreak = useCallback((newLevel) => {
+    console.log(`🎉 LEVEL UP! Starting 5-second break before Level ${newLevel}`)
+    console.log(`🔍 Break function called, setting levelUpBreak to true...`)
+    
+    // Clear game timers but NOT break states!
+    clearAllTimers()
+    
+    // Enable break mode IMMEDIATELY
+    setLevelUpBreak(true)
+    setBreakCountdown(5)
+    setDogClickable(false)
+    
+    console.log(`🔍 levelUpBreak state should be true now`)
+    
+    // Show standalone popup immediately
+    showBreakPopup(newLevel, 5)
+    
+    // SIMPLE TIMER: No complex state management, just direct DOM updates
+    let countdownRemaining = 5
+    let timerActive = true // Prevent external clearing
+    const timerStartTime = Date.now()
+    
+    console.log(`🖥️ [TERMINAL DEBUG] ⏰ Break timer STARTED at ${new Date().toLocaleTimeString()}.${String(timerStartTime % 1000).padStart(3, '0')}`)
+    console.log(`🖥️ [TERMINAL DEBUG] ⏰ Timer will run for 5 seconds, updating every 1000ms`)
+    
+    const countdownTimer = setInterval(() => {
+      if (!timerActive) {
+        const stopTime = Date.now()
+        const elapsedMs = stopTime - timerStartTime
+        console.log(`🖥️ [TERMINAL DEBUG] ⚠️ Timer was stopped externally after ${(elapsedMs/1000).toFixed(1)}s`)
+        return
+      }
+      
+      countdownRemaining--
+      const currentTime = Date.now()
+      const elapsedMs = currentTime - timerStartTime
+      const elapsedSeconds = (elapsedMs / 1000).toFixed(1)
+      
+      console.log(`🖥️ [TERMINAL DEBUG] ⏰ Timer tick: ${countdownRemaining}s remaining | Elapsed: ${elapsedSeconds}s`)
+      
+      // Update countdown in DOM directly (no React state conflicts!)
+      updateBreakCountdown(countdownRemaining)
+      
+      if (countdownRemaining <= 0) {
+        const endTime = Date.now()
+        const totalElapsedMs = endTime - timerStartTime
+        const totalElapsedSeconds = (totalElapsedMs / 1000).toFixed(1)
+        
+        console.log(`�️ [TERMINAL DEBUG] ⏰ Break countdown COMPLETE! Total time: ${totalElapsedSeconds}s`)
+        console.log(`🖥️ [TERMINAL DEBUG] ⏰ Cleaning up timer and resuming game...`)
+        
+        timerActive = false
+clearInterval(countdownTimer)
+        
+        // Hide popup and resume game
+        hideBreakPopup()
+        
+        // Clean end of break - FIX: useEffect watcher approach
+        setTimeout(() => {
+          setLevelUpBreak(false)
+          setBreakCountdown(0)
+          // 🚨 FIX: Reset dogClickable to true INSIDE spawnUglyDog, not here
+          if (gameState.gameActive) {
+            spawnUglyDog()
+          }
+        }, 200)
+      }
+    }, 1000)
+    
+    // Store break timer in ref for cleanup
+    levelUpBreakTimerRef.current = countdownTimer
+  }, [clearAllTimers, spawnUglyDog, showBreakPopup, updateBreakCountdown, hideBreakPopup, getDifficultySettings, currentLevel, gameState.gameActive, handleAutoMiss, getCurrentLevel])
+
+  // REMOVED: useEffect level detection to prevent double triggering
+  // Level up detection now only happens in handleUglyDogClick for immediate response
 
   // PURE INSTANT MODE: No auto-miss system - pure clicking speed challenge!
   // Players can take their time, focus is on accuracy and clicking speed
@@ -262,17 +585,23 @@ export default function NativeUglyDogGame() {
   const startGame = () => {
     console.log('🎯 Starting Spawn-Disappear Mode game!')
     
-    // Clear any existing timers first
-    clearAllTimers()
+    // Clear all timers AND states for fresh start
+    clearAllTimersAndStates()
     
-    setGameState(prev => ({
-      ...prev,
-      gameActive: true,
-      score: 0,
-      misses: 0,
-      health: 3,
-      level: 1
-    }))
+    // Hide any existing popup at game start
+    hideBreakPopup()
+    
+    setGameState(prev => {
+      console.log('🔄 Setting game state to active...')
+      return {
+        ...prev,
+        gameActive: true,
+        score: 0,
+        misses: 0,
+        health: 3,
+        level: 1
+      }
+    })
     setGameStats({
       totalClicks: 0,
       accuracy: 100,
@@ -285,21 +614,28 @@ export default function NativeUglyDogGame() {
     setCountdown(0)
     setDogTimeoutState(false)
     
+    console.log('⏰ Scheduling first UglyDog spawn in 1 second...')
+    
     // Start first UglyDog spawn
     setTimeout(() => {
-      if (gameState.gameActive) {
-        spawnUglyDog()
-      }
+      console.log('⏰ First spawn timeout triggered!')
+      console.log('🔍 Current gameState.gameActive:', gameState.gameActive)
+      // Use a more reliable check - spawn regardless for testing
+      spawnUglyDog()
     }, 1000) // 1 second delay for game start
   }
 
-  // Stop game - SPAWN-DISAPPEAR MODE
+  // Stop game - ENHANCED CLEANUP FOR RACE CONDITION PROTECTION
   const stopGame = useCallback(() => {
+    // 🔧 GUARD: Prevent multiple calls to stopGame
+    if (!gameState.gameActive) {
+      console.log('⚠️ stopGame() called but game already inactive - ignoring')
+      return
+    }
+    
     console.log('🛑 Stopping Spawn-Disappear Mode game...')
     
-    // Clear all timers first to prevent any lingering effects
-    clearAllTimers()
-    
+    // ⚡ IMMEDIATE PROTECTION: Set gameActive to false FIRST
     setGameState(prev => {
       const newHighest = Math.max(prev.score, prev.highestScore)
       return {
@@ -308,6 +644,9 @@ export default function NativeUglyDogGame() {
         highestScore: newHighest
       }
     })
+    
+    // Clear all timers AND states when stopping game
+    clearAllTimersAndStates()
     
     // REMOVED: No more trap system!
     setDogClickable(false)
@@ -318,7 +657,7 @@ export default function NativeUglyDogGame() {
     if (gameState.score > 0) {
       submitScore(gameState.score)
     }
-  }, [clearAllTimers, gameState.score])
+  }, [clearAllTimersAndStates, gameState.score, gameState.gameActive])
 
   // Create click effect - ENHANCED (MOVED UP TO FIX INITIALIZATION)
   const createClickEffect = (x, y) => {
@@ -339,54 +678,71 @@ export default function NativeUglyDogGame() {
     setTimeout(() => effect.remove(), 1200)
   }
 
-  // Handle UglyDog click - SIMPLIFIED: Pure UglyDog clicking game!
+  // Handle UglyDog click - RACE CONDITION PROTECTED
   const handleUglyDogClick = useCallback((e) => {
     e.stopPropagation()
-    // Strict guards to prevent double execution
-    if (!gameState.gameActive || !dogClickable) return
-
+    // 🔒 ULTRA-STRICT GUARDS: Prevent double execution and race conditions
+    if (!gameState.gameActive || !dogClickable || levelUpBreak) {
+      console.log('🚫 Click blocked:', { 
+        gameActive: gameState.gameActive, 
+        dogClickable, 
+        levelUpBreak 
+      })
+      return
+    }
     console.log('🎯 UglyDog caught! +1 Score, UglyDog disappears!')
-    
-    // Clear auto-miss timer immediately to prevent conflicts
+    // ⚡ RACE CONDITION FIX: Immediate timer clearance and state protection
+    const currentAutoMissTimer = autoMissTimerRef.current
     clearAllTimers()
-    
-    // Immediately disable clicking and make UglyDog disappear
+    // 🛡️ ADDITIONAL PROTECTION: Force clear specific timer if exists
+    if (currentAutoMissTimer) {
+      clearTimeout(currentAutoMissTimer)
+      console.log(`🛡️ Force cleared autoMissTimer: ${currentAutoMissTimer}`)
+    }
+    // Langsung disable klik & animasi fade out
     setDogClickable(false)
-    
+    setDogTimeoutState(true)
     // Update score
+    const newScore = gameState.score + 1
     setGameState(prev => ({
       ...prev,
-      score: prev.score + 1
+      score: newScore
     }))
-    
+    console.log(`📊 Score updated to: ${newScore}`)
+    // Cek level up langsung abis update score
+    const newLevelForScore = GAME_LEVELS.find(level => 
+      newScore >= level.minScore && newScore <= level.maxScore
+    ) || GAME_LEVELS[GAME_LEVELS.length - 1]
+    console.log(`🔍 Level check after click: current=${previousLevel}, newForScore=${newLevelForScore.level}, score=${newScore}`)
+    console.log(`🔍 GAME_LEVELS[1]:`, GAME_LEVELS[1]) // Debug level 2 definition
+    if (newLevelForScore.level > previousLevel) {
+      console.log(`🎉 IMMEDIATE LEVEL UP: ${previousLevel} → ${newLevelForScore.level}`)
+      console.log(`🎉 Triggering level up break...`)
+      setPreviousLevel(newLevelForScore.level)
+      startLevelUpBreak(newLevelForScore.level)
+      return // Jangan respawn langsung, biar break yang handle
+    } else {
+      console.log(`🔍 No level up yet. Current: ${previousLevel}, New: ${newLevelForScore.level}`)
+    }
     // Update stats
     setGameStats(prev => ({
       ...prev,
       totalClicks: prev.totalClicks + 1,
       accuracy: Math.round(((prev.totalClicks + 1) / (prev.totalClicks + 1 + gameState.misses)) * 100)
     }))
-
     // Create click effect
     createClickEffect(e.clientX, e.clientY)
-    
-    // 🎯 SIMPLIFIED: UglyDog disappears and respawns immediately
-    console.log('💨 UglyDog disappears! Spawning new one...')
-    
-    // Make UglyDog disappear with animation
-    setDogTimeoutState(true) // Trigger disappear animation
-    
-    // SIMPLIFIED: No more traps! Just spawn new UglyDog after short delay
+    // Respawn dog abis animasi fade out bentar
     setTimeout(() => {
-      if (gameState.gameActive) {
-        console.log('🐕 Spawning new UglyDog for next round')
-        spawnUglyDog() // Just spawn new UglyDog normally
+      if (gameState.gameActive && !levelUpBreak) {
+        spawnUglyDog()
       }
-    }, 100) // Quick respawn for smooth gameplay
-  }, [gameState.gameActive, gameState.misses, dogClickable, clearAllTimers, createClickEffect, spawnUglyDog])
+    }, 200) // Delay dikit biar animasi fade out kelar
+  }, [gameState.gameActive, gameState.misses, gameState.score, dogClickable, clearAllTimers, createClickEffect, spawnUglyDog, levelUpBreak, previousLevel, startLevelUpBreak])
 
   // Handle miss click - ENHANCED LOGGING
   const handleMissClick = useCallback(() => {
-    if (!gameState.gameActive) return
+    if (!gameState.gameActive || levelUpBreak) return
 
     console.log('Miss click registered')
     
@@ -399,15 +755,18 @@ export default function NativeUglyDogGame() {
       newHealth = gameState.health - 1
       newScore = Math.max(0, gameState.score - 10)
       
+      // 🔧 FIXED: Only game over when health becomes 0 or less  
       if (newHealth <= 0) {
-        console.log('Health depleted, stopping game')
+        console.log('💀 GAME OVER! All health depleted!')
         stopGame()
         return
+      } else {
+        console.log(`❤️ Health reduced to ${newHealth}. Player gets fresh 3 misses!`)
       }
       
       setGameState(prev => ({
         ...prev,
-        misses: 0,
+        misses: 0,        // Reset misses back to 0 for next round
         health: newHealth,
         score: newScore
       }))
@@ -426,28 +785,34 @@ export default function NativeUglyDogGame() {
   }, [gameState])
 
   // STANDARDIZED: Create timeout effect - consistent with other feedback
-  const createTimeoutEffect = (x, y) => {
+  const createTimeoutEffect = (xPercent, yPercent) => {
+    // Cari posisi dog di layar (pixel) berdasarkan posisi % dan parent .game-canvas
+    const gameCanvas = document.querySelector('.game-canvas')
+    if (!gameCanvas) return
+    const rect = gameCanvas.getBoundingClientRect()
+    // Hitung posisi pixel relatif ke game-canvas
+    const left = rect.left + (rect.width * (xPercent / 100))
+    const top = rect.top + (rect.height * (yPercent / 100))
     const effect = document.createElement('div')
     effect.style.position = 'fixed'
-    effect.style.left = `${x}%`
-    effect.style.top = `${y}%`
+    effect.style.left = `${left}px`
+    effect.style.top = `${top}px`
     effect.style.color = '#ef4444'
-    effect.style.fontSize = '22px' // STANDARDIZED: Same size as other effects
+    effect.style.fontSize = '22px'
     effect.style.fontWeight = 'bold'
     effect.style.pointerEvents = 'none'
     effect.style.zIndex = '9999'
-    effect.style.animation = 'float-up 1.2s ease-out forwards' // STANDARDIZED: Same animation
-    effect.style.textShadow = '0 0 12px #ef4444' // STANDARDIZED: Same glow pattern
+    effect.style.animation = 'float-up 1.2s ease-out forwards'
+    effect.style.textShadow = '0 0 12px #ef4444'
     effect.style.transform = 'translate(-50%, -50%)'
     effect.style.border = '2px solid #ef4444'
-    effect.style.borderRadius = '8px' // STANDARDIZED: Same border radius
-    effect.style.padding = '6px 12px' // STANDARDIZED: Same padding
-    effect.style.background = 'rgba(239, 68, 68, 0.15)' // STANDARDIZED: Same background opacity
-    effect.style.backdropFilter = 'blur(2px)' // STANDARDIZED: Same blur
+    effect.style.borderRadius = '8px'
+    effect.style.padding = '6px 12px'
+    effect.style.background = 'rgba(239, 68, 68, 0.15)'
+    effect.style.backdropFilter = 'blur(2px)'
     effect.textContent = '⏰ TIMEOUT!'
-    
     document.body.appendChild(effect)
-    setTimeout(() => effect.remove(), 1200) // STANDARDIZED: Same cleanup time
+    setTimeout(() => effect.remove(), 1200)
   }
   // Submit score to backend
   const submitScore = async (score) => {
@@ -498,14 +863,34 @@ export default function NativeUglyDogGame() {
     }
   }, [gameState.gameActive])
 
-  // Cleanup timers on unmount - ENHANCED CLEANUP
+  // 🚨 REACT-IMMUNE Cleanup - RESPECT BREAK PROTECTION
   useEffect(() => {
     return () => {
+      // 🔒 CRITICAL: Check global protection flag before any cleanup!
+      if (window.UGLYDOG_BREAK_ACTIVE) {
+        console.log('🖥️ [TERMINAL DEBUG] 🔒 Component unmounting but break is PROTECTED - NO CLEANUP!')
+        console.log('🖥️ [TERMINAL DEBUG] 🔒 Preserving popup and timer due to global protection flag')
+        // Only clear non-break timers, NEVER touch break popup/timer
+        if (autoMissTimerRef.current) {
+          clearTimeout(autoMissTimerRef.current)
+          autoMissTimerRef.current = null
+        }
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current)
+          countdownIntervalRef.current = null
+        }
+        return
+      }
+      // CRITICAL: Only clear timers, NOT popup during break!
+      if (levelUpBreak && breakCountdown > 0) {
+        console.log('⚠️ Component unmounting during break - preserving popup and timer')
+        // Only clear non-break timers, let break continue
+        clearAllTimers()
+        return
+      }
       console.log('Component unmounting, cleaning up all timers and effects...')
-      
-      // Clear all game timers
-      clearAllTimers()
-      
+      // Clear ALL timers and states (this will also hide popup)
+      clearAllTimersAndStates()
       // Clean up any remaining visual effects
       const timeoutEffects = document.querySelectorAll('div[style*="timeout-miss-float"]')
       timeoutEffects.forEach(effect => {
@@ -517,25 +902,40 @@ export default function NativeUglyDogGame() {
           effect.parentNode.removeChild(effect)
         }
       })
-      
       // Remove any remaining timeout shake classes
       const gameContainer = document.querySelector('.native-uglydog-game')
       if (gameContainer) {
         gameContainer.classList.remove('timeout-shake')
       }
-      
       // Remove any remaining miss highlight classes
       const missIndicator = document.querySelector('.miss-indicator')
       if (missIndicator) {
         missIndicator.classList.remove('miss-highlight')
       }
     }
-  }, [clearAllTimers])
+  }, [clearAllTimers, clearAllTimersAndStates, levelUpBreak, breakCountdown])
 
   // Load leaderboard on mount
   useEffect(() => {
     fetchLeaderboard()
   }, [])
+
+  // 🚨 REACT-IMMUNE Final Cleanup - RESPECT BREAK PROTECTION  
+  useEffect(() => {
+    return () => {
+      // 🔒 CRITICAL: Check global protection flag first!
+      if (window.UGLYDOG_BREAK_ACTIVE) {
+        console.log('🖥️ [TERMINAL DEBUG] 🔒 Final cleanup blocked - break is PROTECTED!')
+        return
+      }
+      
+      // ONLY clean up popup if NOT during active break
+      if (!levelUpBreak || breakCountdown <= 0) {
+        console.log('🧹 Cleaning up popup on final unmount')
+        hideBreakPopup()
+      }
+    }
+  }, [hideBreakPopup, levelUpBreak, breakCountdown])
 
   return (
     <>
@@ -555,66 +955,528 @@ export default function NativeUglyDogGame() {
           overflow: hidden;
         }
         
-        .game-stats-grid {
+        /* MAIN GRID LAYOUT */
+        .game-main-grid {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 15px;
+          grid-template-columns: 2fr 1fr;
+          gap: 20px;
           padding: 20px;
-          background: rgba(30, 40, 53, 0.5);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.0784313725);
+          min-height: 500px;
         }
         
-        .stat-item {
-          text-align: center;
-          padding: 10px;
-          border-radius: 10px;
-          background: rgba(30, 40, 53, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+        /* GAME AREA (LEFT SIDE) */
+        .game-area {
+          display: flex;
+          flex-direction: column;
+          gap: 15px;
+        }
+        
+        /* HEXAGONAL GAMING PANEL - FUTURISTIC HUD */
+        .gaming-hud {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 20px;
+          padding: 14px 35px;
+          background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(134, 255, 0, 0.05));
+          clip-path: polygon(20px 0%, 100% 0%, calc(100% - 20px) 100%, 0% 100%);
+          border: none;
+          margin-bottom: 12px;
+          transition: all 0.4s ease;
+          overflow: visible;
+        }
+        
+        .gaming-hud::before {
+          content: '';
+          position: absolute;
+          top: -2px;
+          left: -2px;
+          right: -2px;
+          bottom: -2px;
+          background: linear-gradient(135deg, rgba(134, 255, 0, 0.6), rgba(0, 255, 255, 0.3), rgba(134, 255, 0, 0.6));
+          clip-path: polygon(20px 0%, 100% 0%, calc(100% - 20px) 100%, 0% 100%);
+          z-index: -1;
+          opacity: 0.8;
+          filter: blur(1px);
+        }
+        
+        .gaming-hud::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, transparent, rgba(134, 255, 0, 0.1), transparent);
+          clip-path: polygon(20px 0%, 100% 0%, calc(100% - 20px) 100%, 0% 100%);
+          animation: hexagon-sweep 3s ease-in-out infinite;
+          z-index: 1;
+          pointer-events: none;
+        }
+        
+        @keyframes hexagon-sweep {
+          0%, 100% { 
+            transform: translateX(-100%);
+            opacity: 0;
+          }
+          50% { 
+            transform: translateX(100%);
+            opacity: 0.6;
+          }
+        }
+        
+        .gaming-hud:hover {
+          background: linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(134, 255, 0, 0.08));
+          transform: translateY(-2px);
+          filter: drop-shadow(0 8px 25px rgba(134, 255, 0, 0.2));
+        }
+        
+        .gaming-hud:hover::before {
+          opacity: 1;
+          filter: blur(0px);
+          background: linear-gradient(135deg, rgba(134, 255, 0, 0.8), rgba(0, 255, 255, 0.5), rgba(134, 255, 0, 0.8));
+        }
+        
+        .gaming-hud:hover::after {
+          animation-duration: 1.5s;
+        }
+        
+        .hud-section {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          position: relative;
+          z-index: 2;
+          transition: all 0.3s ease;
+          padding: 2px 4px;
+          border-radius: 4px;
+        }
+        
+        .hud-section:hover {
+          background: rgba(134, 255, 0, 0.1);
+          transform: scale(1.05);
+          box-shadow: 0 0 8px rgba(134, 255, 0, 0.3);
+        }
+        
+        .hud-separator {
+          width: 1px;
+          height: 18px;
+          background: linear-gradient(to bottom, transparent, rgba(134, 255, 0, 0.5), rgba(0, 255, 255, 0.3), rgba(134, 255, 0, 0.5), transparent);
+          margin: 0 8px;
+          transition: all 0.3s ease;
+          position: relative;
+          z-index: 2;
+        }
+        
+        .hud-separator::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: -1px;
+          width: 3px;
+          height: 100%;
+          background: linear-gradient(to bottom, transparent, rgba(134, 255, 0, 0.2), rgba(0, 255, 255, 0.1), rgba(134, 255, 0, 0.2), transparent);
+          filter: blur(2px);
+        }
+        
+        /* HEALTH HEARTS - HEXAGONAL ENHANCED */
+        .health-hearts {
+          display: flex;
+          gap: 5px;
+          padding: 2px;
+        }
+        
+        .heart-icon {
+          width: 22px;
+          height: 22px;
+          transition: all 0.4s ease;
+          filter: drop-shadow(0 0 4px currentColor);
+        }
+        
+        .heart-icon.filled {
+          color: #ff4757;
+          filter: drop-shadow(0 0 8px rgba(255, 71, 87, 0.8));
+          animation: heartbeat 2s ease-in-out infinite;
+        }
+        
+        .heart-icon.empty {
+          color: rgba(255, 255, 255, 0.2);
+          filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.1));
+        }
+        
+        @keyframes heartbeat {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); filter: drop-shadow(0 0 12px rgba(255, 71, 87, 1)); }
+        }
+          color: rgba(239, 68, 68, 0.3);
+          filter: none;
+        }
+        
+        /* SCORE DISPLAY - HEXAGONAL ENHANCED */
+        .score-display {
+          font-size: 17px;
+          font-weight: bold;
+          color: #86FF00;
+          text-shadow: 0 0 10px rgba(134, 255, 0, 0.6);
+          filter: drop-shadow(0 0 4px rgba(134, 255, 0, 0.4));
           transition: all 0.3s ease;
         }
         
-        .stat-item:hover {
-          background: rgba(134, 255, 0, 0.1);
-          border-color: rgba(134, 255, 0, 0.2);
+        .hud-section:hover .score-display {
+          text-shadow: 0 0 15px rgba(134, 255, 0, 0.9);
+          transform: scale(1.05);
         }
         
-        .stat-icon {
-          font-size: 20px;
-          margin-bottom: 5px;
-          display: block;
+        /* LEVEL PROGRESS - HEXAGONAL ENHANCED */
+        .level-progress {
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
         
-        .stat-label {
-          font-size: 11px;
-          color: #798DA3;
-          margin-bottom: 3px;
-          text-transform: uppercase;
+        .level-text {
+          font-size: 15px;
+          font-weight: bold;
+          color: #86FF00;
+          min-width: 35px;
+          text-shadow: 0 0 8px rgba(134, 255, 0, 0.5);
+          transition: all 0.3s ease;
+        }
+        
+        .progress-bar {
+          width: 70px;
+          height: 8px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+          overflow: hidden;
+          border: 1px solid rgba(134, 255, 0, 0.3);
+          position: relative;
+        }
+        
+        .progress-bar::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, transparent, rgba(134, 255, 0, 0.2), transparent);
+          animation: progress-shine 2s ease-in-out infinite;
+        }
+        
+        @keyframes progress-shine {
+          0%, 100% { transform: translateX(-100%); }
+          50% { transform: translateX(100%); }
+        }
+        
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #86FF00, #00FFFF, #86FF00);
+          border-radius: 3px;
+          transition: width 0.5s ease;
+          box-shadow: 0 0 8px rgba(134, 255, 0, 0.6);
+          position: relative;
+          overflow: hidden;
+        }
+        
+        .progress-fill::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+          animation: fill-shine 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes fill-shine {
+          0%, 100% { transform: translateX(-100%); }
+          50% { transform: translateX(100%); }
+        }
+        
+        /* MISS COUNTER - ENHANCED UX */
+        .miss-counter {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .miss-text {
+          font-size: 14px;
+          color: #9CA3AF;
+          font-weight: 600;
           letter-spacing: 0.5px;
         }
         
-        .stat-value {
+        .miss-bars {
+          display: flex;
+          gap: 4px;
+        }
+        
+        .miss-bar {
+          width: 10px;
+          height: 18px;
+          border-radius: 3px;
+          transition: all 0.3s ease;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .miss-bar.active {
+          background: linear-gradient(135deg, #ef4444, #dc2626);
+          box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+          border-color: #ef4444;
+          animation: miss-pulse 0.5s ease-in-out;
+        }
+        
+        .miss-bar.inactive {
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.15);
+        }
+        
+        @keyframes miss-pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.15); box-shadow: 0 0 12px rgba(239, 68, 68, 1); }
+          100% { transform: scale(1); }
+        }
+        
+        /* GAME CANVAS - MAIN PLAY AREA */
+        .game-canvas {
+          position: relative;
+          height: 380px;
+          background: linear-gradient(135deg, 
+            rgba(26, 34, 44, 0.8) 0%, 
+            rgba(30, 40, 53, 0.9) 50%,
+            rgba(26, 34, 44, 0.8) 100%);
+          cursor: crosshair;
+          overflow: hidden;
+          border-radius: 15px;
+          border: 2px solid rgba(134, 255, 0, 0.3);
+        }
+        
+        .game-canvas::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: radial-gradient(
+            circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+            rgba(134, 255, 0, 0.1) 0%,
+            transparent 50%
+          );
+          pointer-events: none;
+          z-index: 1;
+        }
+        
+        /* COMPACT GAME CONTROLS */
+        .game-controls-compact {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 10px;
+          padding: 10px;
+          background: rgba(30, 40, 53, 0.3);
+          border-radius: 8px;
+        }
+        
+        /* LEADERBOARD AREA (RIGHT SIDE) */
+        .leaderboard-area {
+          display: flex;
+          flex-direction: column;
+          background: rgba(30, 40, 53, 0.4);
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          overflow: hidden;
+        }
+        
+        .leaderboard-header {
+          padding: 15px;
+          background: rgba(134, 255, 0, 0.1);
+          border-bottom: 1px solid rgba(134, 255, 0, 0.2);
+        }
+        
+        .leaderboard-header h3 {
+          margin: 0 0 5px 0;
+          font-size: 16px;
+          color: #86FF00;
+          font-weight: bold;
+        }
+        
+        .leaderboard-subtitle {
+          font-size: 11px;
+          color: #798DA3;
+          opacity: 0.8;
+        }
+        
+        .leaderboard-content {
+          flex: 1;
+          padding: 15px;
+        }
+        
+        .leaderboard-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .leaderboard-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 6px;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .leaderboard-item .rank {
+          font-size: 12px;
+          font-weight: bold;
+          color: #fbbf24;
+          min-width: 20px;
+        }
+        
+        .leaderboard-item .player-info {
+          flex: 1;
+        }
+        
+        .leaderboard-item .player-name {
+          font-size: 12px;
+          color: #ffffff;
+          font-weight: 500;
+        }
+        
+        .leaderboard-item .player-level {
+          font-size: 10px;
+          color: #798DA3;
+          opacity: 0.8;
+        }
+        
+        .leaderboard-item .player-score {
+          font-size: 12px;
+          color: #86FF00;
+          font-weight: bold;
+        }
+        
+        .leaderboard-empty {
+          text-align: center;
+          padding: 30px 15px;
+          color: #798DA3;
+        }
+        
+        .leaderboard-empty .empty-icon {
+          width: 48px;
+          height: 48px;
+          margin-bottom: 10px;
+          margin-left: auto;
+          margin-right: auto;
+          color: #798DA3;
+          display: block;
+        }
+        
+        .leaderboard-empty .empty-text {
+          font-size: 14px;
+          font-weight: 500;
+          margin-bottom: 5px;
+        }
+        
+        .leaderboard-empty .empty-subtitle {
+          font-size: 11px;
+          opacity: 0.7;
+        }
+        
+        .personal-best {
+          padding: 15px;
+          background: rgba(134, 255, 0, 0.05);
+          border-top: 1px solid rgba(134, 255, 0, 0.2);
+          text-align: center;
+        }
+        
+        .personal-best-label {
+          font-size: 11px;
+          color: #798DA3;
+          margin-bottom: 3px;
+        }
+        
+        .personal-best-score {
           font-size: 16px;
           color: #86FF00;
           font-weight: bold;
           text-shadow: 0 0 8px rgba(134, 255, 0, 0.3);
         }
         
-        .game-canvas {
-          position: relative;
-          height: 350px;
-          background: linear-gradient(135deg, #1A222C 0%, #1E2835 100%);
-          cursor: crosshair;
-          overflow: hidden;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.0784313725);
+        /* HOW TO PLAY SECTION (BOTTOM) */
+        .how-to-play-section {
+          margin-top: 20px;
+          padding: 20px;
+          background: rgba(30, 40, 53, 0.4);
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .how-to-play-header {
+          margin-bottom: 15px;
+        }
+        
+        .how-to-play-header h3 {
+          margin: 0;
+          font-size: 16px;
+          color: #86FF00;
+          font-weight: bold;
+        }
+        
+        .how-to-play-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 15px;
+        }
+        
+        .instruction-card {
+          padding: 15px;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          text-align: center;
+          transition: all 0.3s ease;
+        }
+        
+        .instruction-card:hover {
+          background: rgba(134, 255, 0, 0.05);
+          border-color: rgba(134, 255, 0, 0.2);
+          transform: translateY(-2px);
+        }
+        
+        .instruction-card .instruction-icon {
+          width: 24px;
+          height: 24px;
+          margin-bottom: 8px;
+          margin-left: auto;
+          margin-right: auto;
+          color: #86FF00;
+          display: block;
+        }
+        
+        .instruction-card .instruction-title {
+          font-size: 12px;
+          color: #86FF00;
+          font-weight: bold;
+          margin-bottom: 5px;
+        }
+        
+        .instruction-card .instruction-text {
+          font-size: 10px;
+          color: #798DA3;
+          line-height: 1.4;
         }
         
         .uglydog {
           position: absolute;
           cursor: pointer;
-          transition: all 0.3s ease;
           user-select: none;
           z-index: 20; /* SIMPLIFIED: Higher priority for primary target */
-          animation: spawn-appear 0.3s ease-out;
           filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3));
           font-size: 50px;
           transform: translate(-50%, -50%);
@@ -623,28 +1485,8 @@ export default function NativeUglyDogGame() {
           background: rgba(255, 255, 255, 0.05);
         }
         
-        @keyframes spawn-appear {
-          0% { 
-            opacity: 0; 
-            transform: translate(-50%, -50%) scale(0);
-            filter: drop-shadow(0 0 20px rgba(134, 255, 0, 0.8));
-          }
-          50% { 
-            opacity: 0.8; 
-            transform: translate(-50%, -50%) scale(1.2);
-            filter: drop-shadow(0 0 15px rgba(134, 255, 0, 0.6));
-          }
-          100% { 
-            opacity: 1; 
-            transform: translate(-50%, -50%) scale(1);
-            filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.3));
-          }
-        }
-        
-        .uglydog:hover {
-          transform: translate(-50%, -50%) scale(1.15) rotate(3deg);
-          filter: brightness(1.2) drop-shadow(0 0 12px rgba(255, 255, 255, 0.6));
-        }
+        /* REMOVED: Hover animation - better UX for clicking without interference */
+        /* REMOVED: Spawn/Disappear animations - instant response for better gameplay */
         
         .uglydog.not-clickable {
           opacity: 0.6;
@@ -653,27 +1495,10 @@ export default function NativeUglyDogGame() {
         }
         
         .uglydog.timeout-fade {
-          animation: true-disappear 0.5s ease-out forwards;
+          opacity: 0.3;
+          filter: grayscale(70%);
           pointer-events: none;
-        }
-        
-        @keyframes true-disappear {
-          0% { 
-            opacity: 1; 
-            transform: translate(-50%, -50%) scale(1);
-            filter: brightness(1);
-          }
-          50% { 
-            opacity: 0.5; 
-            transform: translate(-50%, -50%) scale(0.3);
-            filter: brightness(2);
-          }
-          100% { 
-            opacity: 0; 
-            transform: translate(-50%, -50%) scale(0);
-            filter: brightness(0);
-          }
-          }
+          animation: fade-warning 1s ease-in-out infinite;
         }
         
         /* SIMPLIFIED: No more trap system - CSS removed for cleaner codebase */
@@ -835,16 +1660,27 @@ export default function NativeUglyDogGame() {
           }
         }
         
+        @keyframes fade-warning {
+          0%, 100% { filter: drop-shadow(0 0 8px rgba(134, 255, 0, 0.6)); }
+          50% { filter: drop-shadow(0 0 20px rgba(255, 107, 107, 0.8)); }
+        }
+        
+        @keyframes float-up {
+          0% { transform: translateY(0) scale(1); opacity: 1; }
+          100% { transform: translateY(-50px) scale(1.2); opacity: 0; }
+        }
+        
         .game-controls {
-          padding: 20px;
+          padding: 15px;
           text-align: center;
           background: rgba(30, 40, 53, 0.3);
+          border-radius: 8px;
         }
         
         .start-stop-text {
           color: #798DA3;
-          margin-bottom: 15px;
-          font-size: 14px;
+          margin-bottom: 10px;
+          font-size: 12px;
         }
         
         .evolution-popup {
@@ -867,6 +1703,31 @@ export default function NativeUglyDogGame() {
           padding: 35px;
           border: 2px solid;
           box-shadow: 0 0 20px rgba(134, 255, 0, 0.3);
+        }
+        
+        .level-up-break-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.9);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          backdrop-filter: blur(8px);
+          animation: evolve-in 0.3s ease-out;
+        }
+        
+        .level-up-content {
+          text-align: center;
+          padding: 30px;
+          border-radius: 20px;
+          background: rgba(26, 34, 44, 0.8);
+          border: 2px solid #86FF00;
+          box-shadow: 0 0 30px rgba(134, 255, 0, 0.4);
         }
         
         .evolution-emoji {
@@ -908,13 +1769,13 @@ export default function NativeUglyDogGame() {
         .miss-indicators {
           display: flex;
           justify-content: center;
-          gap: 5px;
-          margin-top: 10px;
+          gap: 3px;
+          margin-top: 5px;
         }
         
         .miss-dot {
-          width: 8px;
-          height: 8px;
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
           background: rgba(255, 255, 255, 0.3);
           transition: all 0.3s ease;
@@ -922,7 +1783,7 @@ export default function NativeUglyDogGame() {
         
         .miss-dot.active {
           background: #ef4444;
-          box-shadow: 0 0 8px #ef4444;
+          box-shadow: 0 0 6px #ef4444;
         }
         
         @keyframes float {
@@ -934,6 +1795,28 @@ export default function NativeUglyDogGame() {
         @keyframes evolve-in {
           0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
           100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        
+        @keyframes section-popup-in {
+          0% { 
+            opacity: 0; 
+            transform: translate(-50%, -50%) scale(0.9);
+          }
+          100% { 
+            opacity: 1; 
+            transform: translate(-50%, -50%) scale(1);
+          }
+        }
+        
+        @keyframes section-popup-out {
+          0% { 
+            opacity: 1; 
+            transform: translate(-50%, -50%) scale(1);
+          }
+          100% { 
+            opacity: 0; 
+            transform: translate(-50%, -50%) scale(0.95);
+          }
         }
         
         @keyframes bounce {
@@ -1010,48 +1893,157 @@ export default function NativeUglyDogGame() {
           animation: timeout-shake 0.6s ease-in-out;
         }
         
-        /* ADDED: Responsive Design Improvements */
-        @media (max-width: 768px) {
-          .game-stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            padding: 15px;
+        /* RESPONSIVE DESIGN - HEXAGONAL OPTIMIZATION */
+        @media (max-width: 968px) {
+          .game-main-grid {
+            grid-template-columns: 1fr;
+            gap: 12px;
+            padding: 12px;
           }
           
-          .stat-item {
-            padding: 8px;
-            font-size: 0.9rem;
+          .gaming-hud {
+            padding: 12px 30px;
+            gap: 16px;
+            clip-path: polygon(15px 0%, 100% 0%, calc(100% - 15px) 100%, 0% 100%);
+          }
+          
+          .gaming-hud::before {
+            clip-path: polygon(15px 0%, 100% 0%, calc(100% - 15px) 100%, 0% 100%);
+          }
+          
+          .gaming-hud::after {
+            clip-path: polygon(15px 0%, 100% 0%, calc(100% - 15px) 100%, 0% 100%);
+          }
+          
+          .hud-separator {
+            margin: 0 6px;
+          }
+          
+          .progress-bar {
+            width: 60px;
           }
           
           .game-canvas {
-            height: 300px; /* Smaller on mobile */
+            height: 300px;
           }
           
-          .uglydog img, .trap img {
-            width: 50px !important; /* Smaller touch targets */
-            height: 50px !important;
+          .how-to-play-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
           }
           
-          .level-indicator {
-            font-size: 10px !important;
-            padding: 6px 10px !important;
+          .leaderboard-area {
+            order: 2;
+          }
+          
+          .how-to-play-section {
+            order: 3;
+          }
+        }
+        
+        @media (max-width: 768px) {
+          .gaming-hud {
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 10px 20px;
+            justify-content: center;
+            clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+          }
+          
+          .gaming-hud::before {
+            clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+          }
+          
+          .gaming-hud::after {
+            clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+          }
+          
+          .hud-separator {
+            display: none;
+          }
+          
+          .hud-section {
+            flex: 0 0 auto;
+            min-width: 90px;
+            justify-content: center;
+          }
+          
+          .progress-bar {
+            width: 50px;
+          }
+          
+          .game-canvas {
+            height: 280px;
+          }
+          
+          .how-to-play-grid {
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          
+          .instruction-card {
+            padding: 12px;
+          }
+          
+          .leaderboard-content {
+            padding: 10px;
+          }
+          
+          .leaderboard-item {
+            padding: 6px;
+            gap: 8px;
           }
         }
         
         @media (max-width: 480px) {
-          .game-stats-grid {
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
+          .game-main-grid {
             padding: 10px;
+            gap: 10px;
           }
           
-          .uglydog img, .trap img {
-            width: 45px !important; /* Even smaller for tiny screens */
-            height: 45px !important;
+          .gaming-hud {
+            flex-direction: column;
+            gap: 8px;
+            padding: 8px;
+          }
+          
+          .hud-section {
+            justify-content: space-between;
+            width: 100%;
+          }
+          
+          .health-hearts {
+            gap: 6px;
+          }
+          
+          .heart-icon {
+            width: 18px;
+            height: 18px;
+          }
+          
+          .progress-bar {
+            width: 40px;
           }
           
           .game-canvas {
             height: 250px;
+          }
+          
+          .uglydog img {
+            width: 45px !important;
+            height: 45px !important;
+          }
+          
+          .leaderboard-header {
+            padding: 12px;
+          }
+          
+          .leaderboard-content {
+            padding: 8px;
+          }
+          
+          .how-to-play-section {
+            padding: 15px;
           }
         }
         
@@ -1077,192 +2069,369 @@ export default function NativeUglyDogGame() {
       `}</style>
 
       <div className="native-uglydog-game">
-        {/* Game Stats */}
-        <div className="game-stats-grid">
-          <div className="stat-item">
-            <span className="stat-icon">📊</span>
-            <div className="stat-label">Score</div>
-            <div className="stat-value">{gameState.score}</div>
-          </div>
-          
-          <div className="stat-item miss-indicator">
-            <span className="stat-icon">❌</span>
-            <div className="stat-label">Misses</div>
-            <div className="stat-value">{gameState.misses}/3</div>
-            <div className="miss-indicators">
-              {[1, 2, 3].map(i => (
-                <div 
-                  key={i} 
-                  className={`miss-dot ${i <= gameState.misses ? 'active' : ''}`}
-                />
-              ))}
-            </div>
-          </div>
-          
-          <div className="stat-item">
-            <span className="stat-icon">❤️</span>
-            <div className="stat-label">Health</div>
-            <div className="stat-value">{gameState.health}</div>
-          </div>
-          
-          <div className="stat-item">
-            <img 
-              src="/assets/images/img-game/rewards.png" 
-              alt="UglyDog"
-              className="stat-icon"
-              style={{
-                width: '24px',
-                height: '24px',
-                objectFit: 'contain',
-                filter: 'drop-shadow(0 0 4px rgba(134, 255, 0, 0.5))',
-                marginBottom: '5px'
-              }}
-            />
-            <div className="stat-label">Level</div>
-            <div className="stat-value" style={{ fontSize: '12px' }}>
-              Level {currentLevel.level}
-            </div>
-          </div>
-        </div>
+        {/* Main Game Layout - Grid System */}
+        <div className="game-main-grid">
+          {/* Left Side - Game Area */}
+          <div className="game-area">
+            {/* Gaming HUD - Horizontal Bar */}
+            <div className="gaming-hud">
+              {/* Health Hearts */}
+              <div className="hud-section">
+                <div className="health-hearts">
+                  {[1, 2, 3].map((heartIndex) => (
+                    <svg 
+                      key={heartIndex}
+                      className={`heart-icon ${heartIndex <= gameState.health ? 'filled' : 'empty'}`}
+                      viewBox="0 0 24 24" 
+                      fill={heartIndex <= gameState.health ? "currentColor" : "none"} 
+                      stroke="currentColor" 
+                      strokeWidth="2" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round"
+                    >
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                  ))}
+                </div>
+              </div>
 
-        {/* Game Canvas */}
-        <div className="game-canvas" onClick={handleMissClick}>
-          {gameState.gameActive ? (
-            <>
-              {/* UglyDog - Real Target */}
-              <div
-                className={`uglydog ${!dogClickable ? 'not-clickable' : ''} ${dogTimeoutState ? 'timeout-fade' : ''}`}
-                style={{
-                  left: `${dogPosition.x}%`,
-                  top: `${dogPosition.y}%`
-                }}
-                onClick={dogClickable ? handleUglyDogClick : undefined}
-              >
-                {/* PNG Image for Real UglyDog */}
-                <img 
-                  src="/assets/images/img-game/ugglydog-original.png" 
-                  alt="UglyDog"
-                  style={{
-                    width: '60px',
-                    height: '60px',
-                    objectFit: 'contain',
-                    filter: 'drop-shadow(0 0 8px rgba(134, 255, 0, 0.5))',
-                    transition: 'all 0.3s ease'
+              <div className="hud-separator"></div>
+
+              {/* Score */}
+              <div className="hud-section">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color: '#86FF00'}}>
+                  <path d="M3 3v5h5"/>
+                  <path d="M21 21v-5h-5"/>
+                  <path d="M21 3L9 15l-6-6"/>
+                </svg>
+                <div className="score-display">{gameState.score}</div>
+              </div>
+
+              <div className="hud-separator"></div>
+
+              {/* Level Progress */}
+              <div className="hud-section">
+                <div className="level-progress">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color: '#86FF00'}}>
+                    <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>
+                  </svg>
+                  <div className="level-text">L{currentLevel.level}</div>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill" 
+                      style={{
+                        width: `${((gameState.score - currentLevel.minScore) / (currentLevel.maxScore === Infinity ? 100 : currentLevel.maxScore - currentLevel.minScore)) * 100}%`
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hud-separator"></div>
+
+              {/* Miss Counter */}
+              <div className="hud-section">
+                <div className="miss-counter">
+                  <div className="miss-text">Miss</div>
+                  <div className="miss-bars">
+                    {[1, 2, 3].map((missIndex) => (
+                      <div 
+                        key={missIndex}
+                        className={`miss-bar ${missIndex <= gameState.misses ? 'active' : 'inactive'}`}
+                      ></div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Game Canvas - Main Play Area */}
+            <div className="game-canvas" onClick={handleMissClick}>
+              {gameState.gameActive ? (
+                <>
+                  {/* DEBUG: Show level break state */}
+                  {process.env.NODE_ENV === 'development' && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '10px',
+                      right: '10px',
+                      background: 'rgba(255, 0, 0, 0.8)',
+                      color: 'white',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      zIndex: 50
+                    }}>
+                      DEBUG: break={levelUpBreak.toString()}, countdown={breakCountdown}
+                    </div>
+                  )}
+
+                  {/* UglyDog - Real Target */}
+                  <div
+                    className={`uglydog${!dogClickable ? ' not-clickable' : ''}${dogTimeoutState ? ' timeout-fade' : ''}`}
+                    style={{
+                      left: `${dogPosition.x}%`,
+                      top: `${dogPosition.y}%`,
+                      pointerEvents: dogClickable ? 'auto' : 'none',
+                    }}
+                    onClick={dogClickable ? handleUglyDogClick : undefined}
+                  >
+                    <img 
+                      src="/assets/images/img-game/ugglydog-original.png" 
+                      alt="UglyDog"
+                      style={{
+                        width: '60px',
+                        height: '60px',
+                        objectFit: 'contain',
+                        filter: 'drop-shadow(0 0 8px rgba(134, 255, 0, 0.5))',
+                        transition: 'all 0.3s ease'
+                      }}
+                    />
+                    <div style={{
+                      position: 'absolute',
+                      top: '-15px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      fontSize: '12px',
+                      color: '#86FF00',
+                      fontWeight: 'bold',
+                      textShadow: '0 0 6px rgba(134, 255, 0, 0.8)',
+                      pointerEvents: 'none'
+                    }}>
+                      UglyDog
+                    </div>
+                  </div>
+                  
+                  {/* Level indicator overlay */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '10px',
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    color: currentLevel.color,
+                    padding: '6px 10px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    border: `1px solid ${currentLevel.color}`,
+                    zIndex: 30,
+                    boxShadow: `0 0 8px ${currentLevel.color}40`
+                  }}>
+                    {currentLevel.difficulty}
+                  </div>
+                  
+                  {/* Instructions for new players */}
+                  {gameState.score === 0 && currentLevel.level === 1 && (
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '15px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      background: 'rgba(0, 0, 0, 0.8)',
+                      color: '#86FF00',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      fontSize: '10px',
+                      zIndex: 15,
+                      border: '1px solid #86FF00',
+                      textAlign: 'center',
+                      maxWidth: '200px',
+                      lineHeight: '1.3'
+                    }}>
+                      🎯 Click UglyDog before it disappears!
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="game-over-state">
+                <svg className="game-over-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom: '20px'}}>
+                    <rect x="14" y="14" width="4" height="6" rx="2"/>
+                    <rect x="6" y="4" width="4" height="16" rx="2"/>
+                    <path d="M6 20h4"/>
+                    <path d="M14 10h4"/>
+                    <path d="M6 14h2v6"/>
+                    <path d="M14 4h2v6"/>
+                  </svg>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px' }}>
+                    {gameState.health <= 0 ? 'Game Over!' : 'UglyDog Clicker'}
+                  </div>
+                  <div style={{ fontSize: '14px', marginBottom: '15px' }}>
+                    {gameState.health <= 0 
+                      ? `Final Score: ${gameState.score}`
+                      : 'Ready to start?'
+                    }
+                  </div>
+                  {!gameState.gameActive ? (
+                    <button
+                      onClick={startGame}
+                      className="tf-button style1"
+                      style={{ fontSize: '14px', padding: '10px 20px' }}
+                    >
+                      <svg style={{display: 'inline-block', width: '16px', height: '16px', marginRight: '6px', verticalAlign: 'middle'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="5,3 19,12 5,21"/>
+                      </svg>
+                      Start Game
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            {/* Game Controls - Bottom of Game Area */}
+            {gameState.gameActive && (
+              <div className="game-controls-compact">
+                <button
+                  onClick={stopGame}
+                  className="tf-button style1"
+                  style={{ 
+                    fontSize: '12px', 
+                    padding: '8px 16px',
+                    background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                    borderColor: '#dc2626',
+                    marginRight: '10px'
                   }}
-                />
-                <div style={{
-                  position: 'absolute',
-                  top: '-15px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  fontSize: '12px',
-                  color: '#86FF00',
-                  fontWeight: 'bold',
-                  textShadow: '0 0 6px rgba(134, 255, 0, 0.8)',
-                  pointerEvents: 'none'
-                }}>
-                  UglyDog
-                </div>
+                >
+                  <svg style={{display: 'inline-block', width: '12px', height: '12px', marginRight: '4px', verticalAlign: 'middle'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="6" y="4" width="4" height="16"/>
+                    <rect x="14" y="4" width="4" height="16"/>
+                  </svg>
+                  Stop
+                </button>
                 
-                {/* 🚀 PURE INSTANT MODE: No timer elements - focus on pure clicking! */}
+                <button
+                  onClick={() => {
+                    console.log('🧪 TEST: Forcing level up...')
+                    setGameState(prev => ({ ...prev, score: 49 }))
+                  }}
+                  style={{ 
+                    fontSize: '10px', 
+                    padding: '4px 8px',
+                    background: '#fbbf24',
+                    color: 'black',
+                    border: 'none',
+                    borderRadius: '4px'
+                  }}
+                >
+                  <svg style={{display: 'inline-block', width: '10px', height: '10px', marginRight: '2px', verticalAlign: 'middle'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 11H1l6-6 6 6z"/>
+                    <path d="M15 13v12l6-6-6-6z"/>
+                  </svg>
+                  Test
+                </button>
               </div>
-              
-              {/* SIMPLIFIED: No more trap system! Pure UglyDog clicking game */}
-              
-              {/* Level indicator overlay */}
-              <div style={{
-                position: 'absolute',
-                top: '10px',
-                left: '10px',
-                background: 'rgba(0, 0, 0, 0.8)',
-                color: currentLevel.color,
-                padding: '8px 12px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                border: `2px solid ${currentLevel.color}`,
-                zIndex: 30, // IMPROVED: UI overlay layer
-                boxShadow: `0 0 10px ${currentLevel.color}40`
-              }}>
-                Level {currentLevel.level} - {currentLevel.difficulty}
-              </div>
-              
-              {/* 🚀 PURE INSTANT MODE: No corner timer - clean UI for speed clicking! */}
-              
-              {/* Enhanced instructions overlay for new players */}
-              {gameState.score === 0 && currentLevel.level === 1 && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: '20px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  background: 'rgba(0, 0, 0, 0.9)',
-                  color: '#86FF00',
-                  padding: '12px 18px',
-                  borderRadius: '15px',
-                  fontSize: '11px',
-                  zIndex: 15,
-                  border: '1px solid #86FF00',
-                  textAlign: 'center',
-                  maxWidth: '280px',
-                  lineHeight: '1.4'
-                }}>
-                  🎯 SPAWN-DISAPPEAR MODE: Click UglyDog before it disappears!<br/>
-                  {currentLevel.level >= 2 && '⚠️ Avoid fake UglyDogs!'}<br/>
-                  ⏰ Quick reactions required - stay alert!
+            )}
+          </div>
+
+          {/* Right Side - Leaderboard */}
+          <div className="leaderboard-area">
+            <div className="leaderboard-header">
+              <h3>
+                <svg style={{display: 'inline-block', width: '20px', height: '20px', marginRight: '8px', verticalAlign: 'middle'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+                  <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+                  <path d="M4 22h16"/>
+                  <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+                  <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+                  <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+                </svg>
+                Leaderboard
+              </h3>
+              <div className="leaderboard-subtitle">Top Players</div>
+            </div>
+            
+            <div className="leaderboard-content">
+              {leaderboard.length > 0 ? (
+                <div className="leaderboard-list">
+                  {leaderboard.map((player, index) => (
+                    <div key={index} className="leaderboard-item">
+                      <div className="rank">#{index + 1}</div>
+                      <div className="player-info">
+                        <div className="player-name">{player.username}</div>
+                        <div className="player-level">{player.evolution_stage}</div>
+                      </div>
+                      <div className="player-score">{player.score}</div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </>
-          ) : (
-            <div className="game-over-state">
-              <div className="game-over-icon">🎮</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px' }}>
-                {gameState.health <= 0 ? 'Game Over!' : 'UglyDog Clicker Game'}
-              </div>
-              <div style={{ fontSize: '14px' }}>
-                {gameState.health <= 0 
-                  ? `Final Score: ${gameState.score}`
-                  : 'Click Start Game to begin!'
-                }
-              </div>
-              {gameState.highestScore > 0 && (
-                <div style={{ fontSize: '12px', marginTop: '10px', color: '#86FF00' }}>
-                  Best Score: {gameState.highestScore}
+              ) : (
+                <div className="leaderboard-empty">
+                  <svg className="empty-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom: '10px', opacity: '0.6'}}>
+                    <path d="M3 3v5h5"/>
+                    <path d="M21 21v-5h-5"/>
+                    <path d="M21 3L9 15l-6-6"/>
+                  </svg>
+                  <div className="empty-text">No scores yet</div>
+                  <div className="empty-subtitle">Be the first to play!</div>
                 </div>
               )}
             </div>
-          )}
+
+            {/* Your Best Score */}
+            {gameState.highestScore > 0 && (
+              <div className="personal-best">
+                <div className="personal-best-label">Your Best</div>
+                <div className="personal-best-score">{gameState.highestScore}</div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Game Controls */}
-        <div className="game-controls">
-          <div className="start-stop-text">
-            {gameState.gameActive ? 'Game is running...' : 'Ready to start?'}
+        {/* How to Play Section - Full Width Bottom */}
+        <div className="how-to-play-section">
+          <div className="how-to-play-header">
+            <h3>
+              <svg style={{display: 'inline-block', width: '20px', height: '20px', marginRight: '8px', verticalAlign: 'middle'}} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                <circle cx="12" cy="17" r="1"/>
+              </svg>
+              How to Play
+            </h3>
           </div>
-          {!gameState.gameActive ? (
-            <button
-              onClick={startGame}
-              className="tf-button style1"
-              style={{ fontSize: '14px', padding: '10px 25px' }}
-            >
-              🎮 Start Game
-            </button>
-          ) : (
-            <button
-              onClick={stopGame}
-              className="tf-button style1"
-              style={{ 
-                fontSize: '14px', 
-                padding: '10px 25px',
-                background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
-                borderColor: '#dc2626'
-              }}
-            >
-              🛑 Stop Game
-            </button>
-          )}
+          
+          <div className="how-to-play-grid">
+            <div className="instruction-card">
+              <svg className="instruction-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="14" y="14" width="4" height="6" rx="2"/>
+                <rect x="6" y="4" width="4" height="16" rx="2"/>
+                <path d="M6 20h4"/>
+                <path d="M14 10h4"/>
+                <path d="M6 14h2v6"/>
+                <path d="M14 4h2v6"/>
+              </svg>
+              <div className="instruction-title">Click UglyDog</div>
+              <div className="instruction-text">Click the UglyDog before it disappears to score points</div>
+            </div>
+            
+            <div className="instruction-card">
+              <svg className="instruction-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12,6 12,12 16,14"/>
+              </svg>
+              <div className="instruction-title">Speed Challenge</div>
+              <div className="instruction-text">Higher levels = faster spawns and shorter timers</div>
+            </div>
+            
+            <div className="instruction-card">
+              <svg className="instruction-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+              <div className="instruction-title">Health System</div>
+              <div className="instruction-text">3 misses = lose 1 health. Game over when health reaches 0</div>
+            </div>
+            
+            <div className="instruction-card">
+              <svg className="instruction-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 21l8-11-8-11"/>
+                <path d="M12 21l8-11-8-11"/>
+              </svg>
+              <div className="instruction-title">Level Up</div>
+              <div className="instruction-text">Every 50 points = new level + 5 second break</div>
+            </div>
+          </div>
         </div>
       </div>
+
 
 
     </>
